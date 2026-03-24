@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${report_title}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f6fb;
+      --panel: #ffffff;
+      --border: #dbe4f0;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --brand: #0f172a;
+      --accent: #2563eb;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      line-height: 1.6;
+    }
+
+    .page {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1, h2 {
+      margin: 0;
+      color: var(--brand);
+    }
+
+    h1 {
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      margin-bottom: 16px;
+    }
+
+    .muted {
+      color: var(--muted);
+      margin: 10px 0 0;
+    }
+
+    .meta-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 20px;
+    }
+
+    .meta-card {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    .meta-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--brand);
+    }
+
+    .meta-card p {
+      margin: 0;
+      word-break: break-word;
+    }
+
+    .analysis-block {
+      margin: 0;
+      padding: 20px;
+      border-radius: 16px;
+      background: var(--code-bg);
+      color: var(--code-text);
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .title-cell {
+      word-break: break-word;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .footer-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="panel">
+      <p class="eyebrow">競品市場情報日報</p>
+      <h1>${report_title}</h1>
+      <p class="muted">生成時間：${generated_at} ｜ 模型：${model_name} ｜ 檔名：${report_path}</p>
+
+      <div class="meta-grid">
+        <div class="meta-card">
+          <strong>Company</strong>
+          <p>${competitors}</p>
+        </div>
+        <div class="meta-card">
+          <strong>Keyword</strong>
+          <p>${target_keyword}</p>
+        </div>
+        <div class="meta-card">
+          <strong>Observation Period</strong>
+          <p>${news_window}</p>
+        </div>
+        <div class="meta-card">
+          <strong>RSS Query</strong>
+          <p>${query}</p>
+          <a href="${rss_url}" target="_blank">View RSS</a>
+        </div>
+        <div class="meta-card">
+          <strong>News Count</strong>
+          <p>${news_count}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Gemini Analysis</h2>
+      ${analysis_block}
+      <div class="footer-note">This template file can be directly adjusted for layout, facilitating subsequent development.</div>
+    </section>
+
+    <section class="panel">
+      <h2>News List</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 60px;">#</th>
+            <th>Title</th>
+            <th style="width: 180px;">Source</th>
+            <th style="width: 180px;">Time</th>
+            <th style="width: 92px;">Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${news_rows}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
