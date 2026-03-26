@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import html
 import os
+import re
+from calendar import timegm
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from string import Template
 from textwrap import dedent
@@ -16,10 +19,39 @@ BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE_PATH = BASE_DIR / "templates" / "report_template.html"
 DEFAULT_REPORT_TITLE = "競品市場情報每日報告"
 DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
-DEFAULT_COMPETITORS = ("Advantech", "Axiomtek", "Adlink")
+DEFAULT_COMPETITORS = (
+    "AAEON",
+    "Adlink",
+    "Advantech",
+    "Arbor",
+    "Asrock",
+    "Avalue",
+    "Axiomtek",
+    "BizLink",
+    "Congatec",
+    "GIGAIPC",
+    "iBase",
+    "iEi",
+    "JWIPC",
+    "Kontron",
+    "Lanner",
+    "moxa",
+    "Neousys",
+    "Nexcom",
+    "OnLogic",
+    "Supermicro",
+    "Syslogic",
+    "Vecow",
+    "yuan",
+    "avermedia",
+    "Auvidea",
+    "connecttech",
+    "miivii",
+)
 DEFAULT_TARGET_KEYWORD = "Edge AI OR Industrial PC OR Embedded"
 DEFAULT_NEWS_LIMIT = 8
 DEFAULT_NEWS_DAYS = 7
+AMBIGUOUS_COMPETITOR_NAMES = frozenset({"arbor", "yuan"})
 
 
 @dataclass(frozen=True)
@@ -163,15 +195,214 @@ def build_query(competitors: Iterable[str], target_keyword: str, news_days: int)
     return f"{base_query} when:{news_days}d"
 
 
-def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, news_limit: int, news_days: int):
-    feedparser = import_feedparser()
-    query = build_query(competitors, target_keyword, news_days)
-    rss_url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+def build_rss_url(query: str) -> str:
+    return f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
 
-    feed = feedparser.parse(rss_url)
-    entries = list(feed.entries[:news_limit])
-    print(f"--- 🔍 偵測到 {len(entries)} 則相關動態 ---\n")
-    return entries, query
+
+def parse_target_keyword_phrases(target_keyword: str) -> tuple[str, ...]:
+    phrases = [segment.strip().strip('"') for segment in re.split(r"\s+OR\s+", target_keyword, flags=re.IGNORECASE)]
+    parsed = tuple(phrase for phrase in phrases if phrase)
+    return parsed or (target_keyword.strip(),)
+
+
+def unique_strings(items: Iterable[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for item in items:
+        normalized = item.strip()
+        if not normalized:
+            continue
+
+        key = normalized.casefold()
+        if key in seen:
+            continue
+
+        seen.add(key)
+        result.append(normalized)
+
+    return tuple(result)
+
+
+def build_expanded_keyword_terms(target_keyword: str) -> tuple[str, ...]:
+    phrases = parse_target_keyword_phrases(target_keyword)
+    expanded_terms: list[str] = list(phrases)
+
+    for phrase in phrases:
+        lowered = phrase.casefold()
+        if "edge ai" in lowered:
+            expanded_terms.extend(["AI", "Edge"])
+        if "industrial pc" in lowered:
+            expanded_terms.extend(["Industrial", "IPC"])
+        if "embedded" in lowered:
+            expanded_terms.extend(["Embedded"])
+
+    expanded_terms.extend(["AI", "IPC"])
+    return unique_strings(expanded_terms)
+
+
+def build_local_relevance_terms(target_keyword: str) -> tuple[str, ...]:
+    expanded_terms = list(build_expanded_keyword_terms(target_keyword))
+
+    for phrase in parse_target_keyword_phrases(target_keyword):
+        lowered = phrase.casefold()
+        if "edge ai" in lowered:
+            expanded_terms.extend(["邊緣", "邊緣運算"])
+        if "industrial pc" in lowered:
+            expanded_terms.extend(["工業", "工業電腦"])
+        if "embedded" in lowered:
+            expanded_terms.extend(["嵌入式"])
+
+    return unique_strings(expanded_terms)
+
+
+def format_google_news_term(term: str) -> str:
+    return f'"{term}"' if re.search(r"\s", term) else term
+
+
+def build_company_query(company: str, target_keyword: str, news_days: int, broadened: bool = False) -> str:
+    keyword_terms = build_expanded_keyword_terms(target_keyword) if broadened else parse_target_keyword_phrases(target_keyword)
+    keyword_clause = " OR ".join(format_google_news_term(term) for term in keyword_terms)
+    return f'"{company}" ({keyword_clause}) when:{news_days}d'
+
+
+def entry_published_at(entry) -> datetime | None:
+    for parsed_key in ("published_parsed", "updated_parsed", "created_parsed"):
+        parsed_value = entry.get(parsed_key)
+        if parsed_value:
+            return datetime.fromtimestamp(timegm(parsed_value), tz=timezone.utc)
+
+    for raw_key in ("published", "updated", "created"):
+        raw_value = entry.get(raw_key)
+        if not raw_value:
+            continue
+
+        try:
+            parsed_datetime = parsedate_to_datetime(str(raw_value))
+        except (TypeError, ValueError, IndexError, OverflowError):
+            continue
+
+        if parsed_datetime.tzinfo is None:
+            return parsed_datetime.replace(tzinfo=timezone.utc)
+        return parsed_datetime.astimezone(timezone.utc)
+
+    return None
+
+
+def filter_recent_entries(entries, news_days: int, news_limit: int | None = None, now: datetime | None = None):
+    current_time = now or datetime.now(timezone.utc)
+    cutoff = current_time - timedelta(days=news_days)
+    recent_entries = []
+
+    for entry in entries:
+        published_at = entry_published_at(entry)
+        if published_at is None:
+            continue
+        if published_at >= cutoff:
+            recent_entries.append((published_at, entry))
+
+    recent_entries.sort(key=lambda item: item[0], reverse=True)
+    if news_limit is None:
+        return [entry for _, entry in recent_entries]
+    return [entry for _, entry in recent_entries[:news_limit]]
+
+
+def strip_html_tags(value: str | None) -> str:
+    return re.sub(r"<[^>]+>", " ", value or " ")
+
+
+def build_entry_search_text(entry) -> str:
+    parts = [
+        str(entry.get("title") or ""),
+        str(entry_source_text(entry)),
+        strip_html_tags(str(entry.get("summary") or "")),
+    ]
+    return re.sub(r"\s+", " ", " ".join(parts)).casefold().strip()
+
+
+def entry_matches_relevance(entry, local_terms: tuple[str, ...], company: str) -> bool:
+    search_text = build_entry_search_text(entry)
+    if not any(term.casefold() in search_text for term in local_terms):
+        return False
+
+    if company.casefold() not in AMBIGUOUS_COMPETITOR_NAMES:
+        return True
+
+    strong_terms = (
+        "edge ai",
+        "industrial",
+        "industrial pc",
+        "embedded",
+        "ipc",
+        "邊緣",
+        "邊緣運算",
+        "工業",
+        "工業電腦",
+        "嵌入式",
+    )
+    return any(term.casefold() in search_text for term in strong_terms)
+
+
+def dedupe_entries(entries):
+    seen: set[tuple[str, str]] = set()
+    deduped = []
+
+    for entry in entries:
+        key = (str(entry.get("link") or ""), str(entry.get("title") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entry)
+
+    return deduped
+
+
+def fetch_entries_for_query(query: str):
+    feedparser = import_feedparser()
+    feed = feedparser.parse(build_rss_url(query))
+    return list(feed.entries)
+
+
+def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, news_limit: int, news_days: int):
+    local_terms = build_local_relevance_terms(target_keyword)
+    all_entries = []
+    strict_hit_companies = 0
+    fallback_hit_companies = 0
+
+    for company in competitors:
+        strict_query = build_company_query(company, target_keyword, news_days, broadened=False)
+        strict_entries = filter_recent_entries(fetch_entries_for_query(strict_query), news_days, news_limit=None)
+
+        if strict_entries:
+            strict_hit_companies += 1
+            all_entries.extend(strict_entries)
+            continue
+
+        if company.casefold() in AMBIGUOUS_COMPETITOR_NAMES:
+            continue
+
+        fallback_query = build_company_query(company, target_keyword, news_days, broadened=True)
+        fallback_entries = filter_recent_entries(fetch_entries_for_query(fallback_query), news_days, news_limit=None)
+        fallback_entries = [entry for entry in fallback_entries if entry_matches_relevance(entry, local_terms, company)]
+
+        if fallback_entries:
+            fallback_hit_companies += 1
+            all_entries.extend(fallback_entries)
+
+    entries = dedupe_entries(all_entries)
+    entries.sort(key=lambda entry: entry_published_at(entry) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    entries = entries[:news_limit]
+
+    query_summary = (
+        f'Per-company query: "<company>" ({target_keyword}) when:{news_days}d; '
+        f'fallback: "<company>" ({" OR ".join(format_google_news_term(term) for term in build_expanded_keyword_terms(target_keyword))}) '
+        f'when:{news_days}d; local date/relevance filter enabled'
+    )
+    print(
+        f"--- 🔍 逐家公司搜尋完成：strict 命中 {strict_hit_companies} 家，fallback 命中 {fallback_hit_companies} 家，"
+        f"近 {news_days} 天保留 {len(entries)} 則相關動態 ---\n"
+    )
+    return entries, query_summary, "https://news.google.com/"
 
 
 def entry_source_text(entry) -> str:
@@ -315,7 +546,7 @@ def print_console_summary(settings: ReportSettings, generated_at: datetime, entr
 
 
 def generate_report(settings: ReportSettings, output_path: Path) -> Path:
-    entries, query = fetch_competitor_news(
+    entries, query, rss_url = fetch_competitor_news(
         settings.competitors,
         settings.target_keyword,
         settings.news_limit,
@@ -329,7 +560,7 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
         settings=settings,
         generated_at=generated_at,
         query=query,
-        rss_url=f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+        rss_url=rss_url,
         entries=entries,
         analysis=analysis,
         output_path=output_path,
