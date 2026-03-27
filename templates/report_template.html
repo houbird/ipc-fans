@@ -7,204 +7,614 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3f6fb;
-      --panel: #ffffff;
-      --border: #dbe4f0;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --brand: #0f172a;
+      --bg: #eef4ff;
+      --bg-accent: #dbeafe;
+      --panel: rgba(255, 255, 255, 0.88);
+      --panel-strong: #ffffff;
+      --border: rgba(148, 163, 184, 0.24);
+      --border-strong: rgba(37, 99, 235, 0.18);
+      --text: #0f172a;
+      --muted: #64748b;
+      --brand: #0b1120;
       --accent: #2563eb;
-      --code-bg: #0f172a;
-      --code-text: #e2e8f0;
+      --accent-soft: rgba(37, 99, 235, 0.1);
+      --accent-strong: #1d4ed8;
+      --success: #0f766e;
+      --shadow: 0 20px 45px rgba(15, 23, 42, 0.1);
+      --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+      --analysis-bg: linear-gradient(135deg, #0f172a 0%, #172554 55%, #1e3a8a 100%);
+      --analysis-text: #dbeafe;
+      --table-header: #eff6ff;
+      --table-row: rgba(248, 250, 252, 0.86);
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.13), transparent 24%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 48%, #f7f9fc 100%);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
-      line-height: 1.6;
-    }
-
-    .page {
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 32px 20px 56px;
-    }
-
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-      padding: 24px;
-      margin-bottom: 24px;
-    }
-
-    .eyebrow {
-      margin: 0 0 8px;
-      color: var(--accent);
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    h1, h2 {
-      margin: 0;
-      color: var(--brand);
-    }
-
-    h1 {
-      font-size: clamp(1.8rem, 4vw, 2.6rem);
-    }
-
-    h2 {
-      font-size: 1.25rem;
-      margin-bottom: 16px;
-    }
-
-    .muted {
-      color: var(--muted);
-      margin: 10px 0 0;
-    }
-
-    .meta-grid {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      margin-top: 20px;
-    }
-
-    .meta-card {
-      background: #f8fafc;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
-    }
-
-    .meta-card strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--brand);
-    }
-
-    .meta-card p {
-      margin: 0;
-      word-break: break-word;
-    }
-
-    .analysis-block {
-      margin: 0;
-      padding: 20px;
-      border-radius: 16px;
-      background: var(--code-bg);
-      color: var(--code-text);
-      white-space: pre-wrap;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      overflow: hidden;
-      border-radius: 16px;
-    }
-
-    th, td {
-      border-bottom: 1px solid var(--border);
-      padding: 12px 14px;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      background: #f8fafc;
-      color: #334155;
-      font-size: 0.92rem;
-      white-space: nowrap;
-    }
-
-    .title-cell {
-      word-break: break-word;
+      line-height: 1.7;
     }
 
     a {
       color: var(--accent);
       text-decoration: none;
+      transition: color 0.2s ease, opacity 0.2s ease;
     }
 
     a:hover {
-      text-decoration: underline;
+      color: var(--accent-strong);
     }
 
-    .empty-state {
-      text-align: center;
+    .page {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 64px;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 32%);
+    }
+
+    .panel-inner {
+      position: relative;
+      z-index: 1;
+      padding: 28px;
+    }
+
+    .hero {
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(239, 246, 255, 0.94) 100%);
+      border-color: var(--border-strong);
+    }
+
+    .hero-grid {
+      display: grid;
+      gap: 24px;
+      grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.95fr);
+      align-items: stretch;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.12);
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      color: var(--brand);
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4.5vw, 3.2rem);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      line-height: 1.25;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 16px 0 0;
+      color: #334155;
+      font-size: 1rem;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .meta-pill {
+      min-width: 180px;
+      padding: 12px 14px;
+      border: 1px solid rgba(37, 99, 235, 0.12);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .meta-pill span {
+      display: block;
+      margin-bottom: 4px;
       color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .meta-pill strong {
+      display: block;
+      color: var(--brand);
+      font-size: 0.95rem;
+      word-break: break-word;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .stat-card {
+      padding: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(219, 234, 254, 0.78));
+      box-shadow: var(--shadow-soft);
+    }
+
+    .stat-card .label {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .stat-card .value {
+      margin: 0;
+      color: var(--brand);
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .stat-card .subtext {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .meta-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      margin-top: 24px;
+    }
+
+    .meta-card {
+      min-height: 100%;
+      padding: 18px 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: var(--panel-strong);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .meta-card:nth-child(1),
+    .meta-card:nth-child(2),
+    .meta-card:nth-child(3),
+    .meta-card:nth-child(5) {
+      grid-column: span 3;
+    }
+
+    .meta-card:nth-child(4) {
+      grid-column: span 6;
+    }
+
+    .meta-card strong {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--brand);
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+    }
+
+    .meta-card p {
+      margin: 0;
+      color: #334155;
+      word-break: break-word;
+    }
+
+    .meta-card a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      font-weight: 700;
+    }
+
+    .meta-card a::after {
+      content: "↗";
+      font-size: 0.95rem;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-end;
+      margin-bottom: 18px;
+    }
+
+    .section-head p {
+      margin: 8px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+    }
+
+    .section-badge {
+      flex-shrink: 0;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--accent-strong);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .analysis-wrap {
+      position: relative;
+      padding: 1px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.36), rgba(14, 165, 233, 0.18));
+    }
+
+    .analysis-block {
+      margin: 0;
+      padding: 24px;
+      border-radius: 23px;
+      background: var(--analysis-bg);
+      color: var(--analysis-text);
+      white-space: pre-wrap;
+      overflow-x: auto;
+      font-size: 0.96rem;
+      line-height: 1.78;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .analysis-block::selection {
+      background: rgba(191, 219, 254, 0.32);
     }
 
     .footer-note {
-      margin-top: 12px;
+      margin-top: 14px;
       color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .table-shell {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--panel-strong);
+      box-shadow: var(--shadow-soft);
+    }
+
+    table {
+      width: 100%;
+      min-width: 960px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--table-header);
+      color: #334155;
+      font-size: 0.88rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      background: rgba(255, 255, 255, 0.98);
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    tbody tr:nth-child(even) {
+      background: var(--table-row);
+    }
+
+    tbody tr:hover {
+      background: rgba(219, 234, 254, 0.45);
+    }
+
+    .title-cell {
+      max-width: 0;
+      font-weight: 700;
+      color: #1e293b;
+      word-break: break-word;
+    }
+
+    .company-cell {
+      color: var(--accent-strong);
+      font-size: 0.92rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .index-cell {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    .source-cell,
+    .time-cell {
+      color: #475569;
+      font-size: 0.94rem;
+    }
+
+    .link-cell a {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.1);
       font-size: 0.9rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .link-cell a:hover {
+      background: rgba(37, 99, 235, 0.16);
+    }
+
+    .empty-state td {
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    @media (max-width: 1024px) {
+      .page {
+        width: min(100% - 24px, 1000px);
+        padding-top: 24px;
+      }
+
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .meta-card:nth-child(1),
+      .meta-card:nth-child(2),
+      .meta-card:nth-child(3),
+      .meta-card:nth-child(5),
+      .meta-card:nth-child(4) {
+        grid-column: span 6;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100% - 18px, 100%);
+        padding-bottom: 36px;
+      }
+
+      .panel {
+        border-radius: 22px;
+      }
+
+      .panel-inner {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: clamp(1.7rem, 8vw, 2.3rem);
+      }
+
+      .hero-meta,
+      .section-head {
+        display: block;
+      }
+
+      .section-badge {
+        display: inline-flex;
+        margin-bottom: 12px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .meta-card:nth-child(1),
+      .meta-card:nth-child(2),
+      .meta-card:nth-child(3),
+      .meta-card:nth-child(5),
+      .meta-card:nth-child(4) {
+        grid-column: auto;
+      }
+
+      .analysis-block {
+        padding: 18px;
+        font-size: 0.93rem;
+      }
+
+      th,
+      td {
+        padding: 12px 14px;
+      }
     }
   </style>
 </head>
 <body>
   <main class="page">
-    <section class="panel">
-      <p class="eyebrow">競品市場情報日報</p>
-      <h1>${report_title}</h1>
-      <p class="muted">生成時間：${generated_at} ｜ 模型：${model_name} ｜ 檔名：${report_path}</p>
+    <section class="panel hero">
+      <div class="panel-inner">
+        <div class="hero-grid">
+          <div>
+            <p class="eyebrow">競品市場情報日報</p>
+            <h1>${report_title}</h1>
+            <p class="lead">集中檢視近期競品聲量、Edge AI / IPC 關鍵主題與值得追蹤的市場訊號，讓每日閱讀更快抓到重點。</p>
 
-      <div class="meta-grid">
-        <div class="meta-card">
-          <strong>Company</strong>
-          <p>${competitors}</p>
+            <div class="hero-meta">
+              <div class="meta-pill">
+                <span>生成時間</span>
+                <strong>${generated_at}</strong>
+              </div>
+              <div class="meta-pill">
+                <span>分析模型</span>
+                <strong>${model_name}</strong>
+              </div>
+              <div class="meta-pill">
+                <span>輸出檔名</span>
+                <strong>${report_path}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-side">
+            <article class="stat-card">
+              <span class="label">News Count</span>
+              <p class="value">${news_count}</p>
+              <p class="subtext">今日整理出的重點新聞筆數</p>
+            </article>
+
+            <article class="stat-card">
+              <span class="label">Observation Period</span>
+              <p class="value">${news_window}</p>
+              <p class="subtext">以近期待觀察區間彙整市場動態</p>
+            </article>
+
+            <article class="stat-card">
+              <span class="label">Target Keyword</span>
+              <p class="subtext">${target_keyword}</p>
+            </article>
+          </div>
         </div>
-        <div class="meta-card">
-          <strong>Keyword</strong>
-          <p>${target_keyword}</p>
-        </div>
-        <div class="meta-card">
-          <strong>Observation Period</strong>
-          <p>${news_window}</p>
-        </div>
-        <div class="meta-card">
-          <strong>RSS Query</strong>
-          <p>${query}</p>
-          <a href="${rss_url}" target="_blank">View Google News</a>
-        </div>
-        <div class="meta-card">
-          <strong>News Count</strong>
-          <p>${news_count}</p>
+
+        <div class="meta-grid">
+          <div class="meta-card">
+            <strong>Company Scope</strong>
+            <p>${competitors}</p>
+          </div>
+          <div class="meta-card">
+            <strong>Monitoring Keyword</strong>
+            <p>${target_keyword}</p>
+          </div>
+          <div class="meta-card">
+            <strong>Observation Window</strong>
+            <p>${news_window}</p>
+          </div>
+          <div class="meta-card">
+            <strong>RSS Query</strong>
+            <p>${query}</p>
+            <a href="${rss_url}" target="_blank" rel="noreferrer">查看 Google News</a>
+          </div>
+          <div class="meta-card">
+            <strong>Tracked Articles</strong>
+            <p>${news_count}</p>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Gemini Analysis</h2>
-      ${analysis_block}
-      <div class="footer-note">This template file can be directly adjusted for layout, facilitating subsequent development.</div>
+      <div class="panel-inner">
+        <div class="section-head">
+          <div>
+            <h2>Gemini Analysis</h2>
+            <p>以下為依照今日新聞脈絡整理出的重點摘要、風險觀察與建議後續追蹤方向。</p>
+          </div>
+          <div class="section-badge">AI Briefing</div>
+        </div>
+
+        <div class="analysis-wrap">
+          ${analysis_block}
+        </div>
+
+        <div class="footer-note">模板已優化成更適合閱讀與列印的版型，後續仍可直接在此檔案延伸調整。</div>
+      </div>
     </section>
 
     <section class="panel">
-      <h2>News List</h2>
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 60px;">#</th>
-            <th>Title</th>
-            <th style="width: 180px;">Source</th>
-            <th style="width: 180px;">Time</th>
-            <th style="width: 92px;">Link</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${news_rows}
-        </tbody>
-      </table>
+      <div class="panel-inner">
+        <div class="section-head">
+          <div>
+            <h2>News List</h2>
+            <p>保留原始新聞清單，方便快速回看來源、時間與原文連結。</p>
+          </div>
+          <div class="section-badge">Source Feed</div>
+        </div>
+
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 68px;">#</th>
+                <th style="width: 160px;">Company</th>
+                <th>Title</th>
+                <th style="width: 190px;">Source</th>
+                <th style="width: 190px;">Time</th>
+                <th style="width: 110px;">Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${news_rows}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 </body>

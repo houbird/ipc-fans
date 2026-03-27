@@ -50,6 +50,7 @@ DEFAULT_COMPETITORS = (
 )
 DEFAULT_TARGET_KEYWORD = "Edge AI OR Industrial PC OR Embedded"
 DEFAULT_NEWS_LIMIT = 8
+DEFAULT_NEWS_PER_COMPANY_LIMIT = 3
 DEFAULT_NEWS_DAYS = 7
 AMBIGUOUS_COMPETITOR_NAMES = frozenset({"arbor", "yuan"})
 
@@ -61,6 +62,7 @@ class ReportSettings:
     competitors: tuple[str, ...]
     target_keyword: str
     news_limit: int
+    per_company_news_limit: int
     news_days: int
     report_title: str
     template_path: Path
@@ -141,15 +143,26 @@ def build_output_path(raw_output: str | None) -> Path:
     return output_dir / f"report-{timestamp}.html"
 
 
-def load_settings(template_override: str | None, news_days_override: int | None = None) -> ReportSettings:
+def load_settings(
+    template_override: str | None,
+    news_days_override: int | None = None,
+    per_company_limit_override: int | None = None,
+) -> ReportSettings:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     model_name = os.getenv("GEMINI_MODEL", DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
     competitors = parse_csv_env(os.getenv("COMPETITORS"), DEFAULT_COMPETITORS)
     target_keyword = os.getenv("TARGET_KEYWORD", DEFAULT_TARGET_KEYWORD).strip() or DEFAULT_TARGET_KEYWORD
     news_limit = parse_positive_int(os.getenv("NEWS_LIMIT"), DEFAULT_NEWS_LIMIT, "NEWS_LIMIT")
+    per_company_news_limit = parse_positive_int(
+        os.getenv("NEWS_PER_COMPANY_LIMIT"),
+        DEFAULT_NEWS_PER_COMPANY_LIMIT,
+        "NEWS_PER_COMPANY_LIMIT",
+    )
     news_days = parse_positive_int(os.getenv("NEWS_DAYS"), DEFAULT_NEWS_DAYS, "NEWS_DAYS")
     if news_days_override is not None:
         news_days = validate_positive_int(news_days_override, "--news-days")
+    if per_company_limit_override is not None:
+        per_company_news_limit = validate_positive_int(per_company_limit_override, "--per-company-limit")
     report_title = os.getenv("REPORT_TITLE", DEFAULT_REPORT_TITLE).strip() or DEFAULT_REPORT_TITLE
     template_path = resolve_template_path(template_override or os.getenv("REPORT_TEMPLATE_PATH"))
 
@@ -159,6 +172,7 @@ def load_settings(template_override: str | None, news_days_override: int | None 
         competitors=competitors,
         target_keyword=target_keyword,
         news_limit=news_limit,
+        per_company_news_limit=per_company_news_limit,
         news_days=news_days,
         report_title=report_title,
         template_path=template_path,
@@ -344,14 +358,20 @@ def entry_matches_relevance(entry, local_terms: tuple[str, ...], company: str) -
 
 
 def dedupe_entries(entries):
-    seen: set[tuple[str, str]] = set()
+    seen: dict[tuple[str, str], int] = {}
     deduped = []
 
     for entry in entries:
         key = (str(entry.get("link") or ""), str(entry.get("title") or ""))
         if key in seen:
+            existing_entry = deduped[seen[key]]
+            merged_companies = unique_strings([*entry_company_names(existing_entry), *entry_company_names(entry)])
+            if merged_companies:
+                existing_entry["companies"] = merged_companies
+                existing_entry["company"] = "、".join(merged_companies)
             continue
-        seen.add(key)
+
+        seen[key] = len(deduped)
         deduped.append(entry)
 
     return deduped
@@ -363,7 +383,41 @@ def fetch_entries_for_query(query: str):
     return list(feed.entries)
 
 
-def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, news_limit: int, news_days: int):
+def entry_company_names(entry) -> tuple[str, ...]:
+    raw_companies = entry.get("companies")
+    if isinstance(raw_companies, (list, tuple)):
+        parsed_companies = unique_strings(str(company) for company in raw_companies if str(company).strip())
+        if parsed_companies:
+            return parsed_companies
+
+    raw_company = str(entry.get("company") or "").strip()
+    if raw_company:
+        return (raw_company,)
+    return ()
+
+
+def entry_company_text(entry) -> str:
+    companies = entry_company_names(entry)
+    return "、".join(companies) if companies else "未知公司"
+
+
+def tag_entries_with_company(entries, company: str):
+    tagged_entries = []
+    for entry in entries:
+        tagged_entry = dict(entry)
+        tagged_entry["companies"] = unique_strings([company, *entry_company_names(tagged_entry)])
+        tagged_entry["company"] = "、".join(tagged_entry["companies"])
+        tagged_entries.append(tagged_entry)
+    return tagged_entries
+
+
+def fetch_competitor_news(
+    competitors: tuple[str, ...],
+    target_keyword: str,
+    news_limit: int,
+    news_days: int,
+    per_company_news_limit: int,
+):
     local_terms = build_local_relevance_terms(target_keyword)
     all_entries = []
     strict_hit_companies = 0
@@ -372,6 +426,7 @@ def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, new
     for company in competitors:
         strict_query = build_company_query(company, target_keyword, news_days, broadened=False)
         strict_entries = filter_recent_entries(fetch_entries_for_query(strict_query), news_days, news_limit=None)
+        strict_entries = tag_entries_with_company(strict_entries[:per_company_news_limit], company)
 
         if strict_entries:
             strict_hit_companies += 1
@@ -384,6 +439,7 @@ def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, new
         fallback_query = build_company_query(company, target_keyword, news_days, broadened=True)
         fallback_entries = filter_recent_entries(fetch_entries_for_query(fallback_query), news_days, news_limit=None)
         fallback_entries = [entry for entry in fallback_entries if entry_matches_relevance(entry, local_terms, company)]
+        fallback_entries = tag_entries_with_company(fallback_entries[:per_company_news_limit], company)
 
         if fallback_entries:
             fallback_hit_companies += 1
@@ -396,11 +452,12 @@ def fetch_competitor_news(competitors: tuple[str, ...], target_keyword: str, new
     query_summary = (
         f'Per-company query: "<company>" ({target_keyword}) when:{news_days}d; '
         f'fallback: "<company>" ({" OR ".join(format_google_news_term(term) for term in build_expanded_keyword_terms(target_keyword))}) '
-        f'when:{news_days}d; local date/relevance filter enabled'
+        f'when:{news_days}d; local date/relevance filter enabled; '
+        f'per-company cap: {per_company_news_limit}'
     )
     print(
         f"--- 🔍 逐家公司搜尋完成：strict 命中 {strict_hit_companies} 家，fallback 命中 {fallback_hit_companies} 家，"
-        f"近 {news_days} 天保留 {len(entries)} 則相關動態 ---\n"
+        f"每家公司最多 {per_company_news_limit} 則，近 {news_days} 天保留 {len(entries)} 則相關動態 ---\n"
     )
     return entries, query_summary, "https://news.google.com/"
 
@@ -416,7 +473,7 @@ def entry_source_text(entry) -> str:
 
 def build_analysis_prompt(competitors: tuple[str, ...], news_entries) -> str:
     news_lines = [
-        f"- 標題: {entry.get('title') or '（無標題）'} (來源: {entry_source_text(entry)})"
+        f"- 公司: {entry_company_text(entry)} | 標題: {entry.get('title') or '（無標題）'} (來源: {entry_source_text(entry)})"
         for entry in news_entries
     ]
 
@@ -467,10 +524,11 @@ def render_analysis_block(analysis: str) -> str:
 
 def render_news_rows(entries) -> str:
     if not entries:
-        return '<tr class="empty-state"><td colspan="5">今日無相關重要新聞。</td></tr>'
+        return '<tr class="empty-state"><td colspan="6">今日無相關重要新聞。</td></tr>'
 
     rows = []
     for index, entry in enumerate(entries, start=1):
+        company = html.escape(entry_company_text(entry))
         title = html.escape(str(entry.get("title") or "（無標題）"))
         source = html.escape(entry_source_text(entry))
         published = html.escape(str(entry.get("published") or entry.get("updated") or "未知時間"))
@@ -478,11 +536,12 @@ def render_news_rows(entries) -> str:
 
         rows.append(
             "<tr>"
-            f"<td>{index}</td>"
+            f"<td class=\"index-cell\">{index}</td>"
+            f"<td class=\"company-cell\">{company}</td>"
             f"<td class=\"title-cell\">{title}</td>"
-            f"<td>{source}</td>"
-            f"<td>{published}</td>"
-            f"<td><a href=\"{link}\" target=\"_blank\" rel=\"noreferrer\">查看</a></td>"
+            f"<td class=\"source-cell\">{source}</td>"
+            f"<td class=\"time-cell\">{published}</td>"
+            f"<td class=\"link-cell\"><a href=\"{link}\" target=\"_blank\" rel=\"noreferrer\">查看</a></td>"
             "</tr>"
         )
 
@@ -533,6 +592,7 @@ def print_console_summary(settings: ReportSettings, generated_at: datetime, entr
     print("=" * 50)
     print(f"📅 生成時間: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🗓️ 搜尋區間: 近 {settings.news_days} 天")
+    print(f"🏢 每家公司上限: {settings.per_company_news_limit} 則")
     print(analysis)
     print("=" * 50)
     print(f"\n📄 HTML 報告已寫入: {output_path}")
@@ -540,7 +600,7 @@ def print_console_summary(settings: ReportSettings, generated_at: datetime, entr
     if entries:
         print("\n報告生成完畢。連結參考：")
         for entry in entries:
-            print(f"🔗 {entry.get('title') or '（無標題）'} -> {entry.get('link') or ''}")
+            print(f"🔗 [{entry_company_text(entry)}] {entry.get('title') or '（無標題）'} -> {entry.get('link') or ''}")
     else:
         print("\n今日無相關重要新聞。")
 
@@ -551,6 +611,7 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
         settings.target_keyword,
         settings.news_limit,
         settings.news_days,
+        settings.per_company_news_limit,
     )
     generated_at = datetime.now()
 
@@ -576,13 +637,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", help="HTML report output path")
     parser.add_argument("--template", help="Override the HTML report template path")
     parser.add_argument("--news-days", type=int, default=None, help="News lookback window in days")
+    parser.add_argument("--per-company-limit", type=int, default=None, help="Maximum news items kept for each company")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     load_env_file()
-    settings = load_settings(args.template, args.news_days)
+    settings = load_settings(args.template, args.news_days, args.per_company_limit)
     output_path = build_output_path(args.output)
     generate_report(settings, output_path)
     return 0
