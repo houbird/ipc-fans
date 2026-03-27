@@ -12,3 +12,4 @@ env/
 report-*.html
 reports/
 .DS_Store
+*.log
