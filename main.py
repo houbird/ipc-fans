@@ -357,21 +357,53 @@ def entry_matches_relevance(entry, local_terms: tuple[str, ...], company: str) -
     return any(term.casefold() in search_text for term in strong_terms)
 
 
+def normalize_title(title: str) -> str:
+    """Return the core part of a news title by stripping trailing source attribution.
+
+    Removes patterns like ` - SourceName` or ` | Author | Section - SourceName`
+    that aggregators and syndication services append to the original headline.
+    """
+    normalized = title.strip()
+    # Iteratively strip trailing ` | something` and ` - something` segments
+    # until the title stabilises, to handle patterns like `Title | Author | Section - Source`.
+    # Require at least one whitespace before the separator so that intra-word hyphens
+    # (e.g. "AI-Powered") are not stripped.
+    while True:
+        prev = normalized
+        normalized = re.sub(r"\s+\|[^|]*$", "", normalized).strip()
+        normalized = re.sub(r"\s+-[^-]+$", "", normalized).strip()
+        if normalized == prev:
+            break
+    return normalized
+
+
 def dedupe_entries(entries):
     seen: dict[tuple[str, str], int] = {}
+    seen_normalized: dict[str, int] = {}
     deduped = []
 
     for entry in entries:
         key = (str(entry.get("link") or ""), str(entry.get("title") or ""))
+        norm_key = normalize_title(str(entry.get("title") or "")).casefold()
+
+        existing_idx: int | None = None
         if key in seen:
-            existing_entry = deduped[seen[key]]
+            existing_idx = seen[key]
+        elif norm_key and norm_key in seen_normalized:
+            existing_idx = seen_normalized[norm_key]
+
+        if existing_idx is not None:
+            existing_entry = deduped[existing_idx]
             merged_companies = unique_strings([*entry_company_names(existing_entry), *entry_company_names(entry)])
             if merged_companies:
                 existing_entry["companies"] = merged_companies
                 existing_entry["company"] = "、".join(merged_companies)
             continue
 
-        seen[key] = len(deduped)
+        idx = len(deduped)
+        seen[key] = idx
+        if norm_key:
+            seen_normalized[norm_key] = idx
         deduped.append(entry)
 
     return deduped
