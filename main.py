@@ -53,12 +53,18 @@ DEFAULT_NEWS_LIMIT = 8
 DEFAULT_NEWS_PER_COMPANY_LIMIT = 3
 DEFAULT_NEWS_DAYS = 7
 AMBIGUOUS_COMPETITOR_NAMES = frozenset({"arbor", "yuan"})
+DEFAULT_SYSTEM_INSTRUCTION = (
+    "你是一位專業的工業電腦 (IPC) 與嵌入式 AI 產業分析師，熟悉邊緣運算、工業自動化及競品市場動態。"
+    "你的任務是協助用戶分析競爭對手的最新新聞，提供客觀、精確且具洞察力的每日競品情報。"
+    "回應時請使用繁體中文，條列清晰，並以產業視角提供有價值的觀察與建議。"
+)
 
 
 @dataclass(frozen=True)
 class ReportSettings:
     api_key: str
     model_name: str
+    system_instruction: str
     competitors: tuple[str, ...]
     target_keyword: str
     news_limit: int
@@ -150,6 +156,7 @@ def load_settings(
 ) -> ReportSettings:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     model_name = os.getenv("GEMINI_MODEL", DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
+    system_instruction = os.getenv("LLM_SYSTEM_INSTRUCTION", DEFAULT_SYSTEM_INSTRUCTION).strip() or DEFAULT_SYSTEM_INSTRUCTION
     competitors = parse_csv_env(os.getenv("COMPETITORS"), DEFAULT_COMPETITORS)
     target_keyword = os.getenv("TARGET_KEYWORD", DEFAULT_TARGET_KEYWORD).strip() or DEFAULT_TARGET_KEYWORD
     news_limit = parse_positive_int(os.getenv("NEWS_LIMIT"), DEFAULT_NEWS_LIMIT, "NEWS_LIMIT")
@@ -169,6 +176,7 @@ def load_settings(
     return ReportSettings(
         api_key=api_key,
         model_name=model_name,
+        system_instruction=system_instruction,
         competitors=competitors,
         target_keyword=target_keyword,
         news_limit=news_limit,
@@ -527,7 +535,7 @@ def build_analysis_prompt(competitors: tuple[str, ...], news_entries) -> str:
     ).strip()
 
 
-def analyze_with_gemini(api_key: str, model_name: str, competitors: tuple[str, ...], news_entries) -> str:
+def analyze_with_gemini(api_key: str, model_name: str, system_instruction: str, competitors: tuple[str, ...], news_entries) -> str:
     if not news_entries:
         return "今日無相關重要新聞，未送出 Gemini 分析。"
 
@@ -536,7 +544,7 @@ def analyze_with_gemini(api_key: str, model_name: str, competitors: tuple[str, .
 
     genai = import_gemini()
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name)
+    model = genai.GenerativeModel(model_name, system_instruction=system_instruction)
 
     prompt = build_analysis_prompt(competitors, news_entries)
 
@@ -647,7 +655,7 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
     )
     generated_at = datetime.now()
 
-    analysis = analyze_with_gemini(settings.api_key, settings.model_name, settings.competitors, entries)
+    analysis = analyze_with_gemini(settings.api_key, settings.model_name, settings.system_instruction, settings.competitors, entries)
 
     template_context = build_template_context(
         settings=settings,
