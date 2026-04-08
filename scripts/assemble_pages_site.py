@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 API_BASE_URL = "https://api.github.com"
@@ -55,14 +56,38 @@ class GitHubClient:
             return json.load(response)
 
     def download_bytes(self, url: str) -> bytes:
-        with urlopen(self._request(url, accept="application/octet-stream")) as response:
-            return response.read()
+        try:
+            with urlopen(self._request(url)) as response:
+                return response.read()
+        except HTTPError as exc:
+            if exc.code == 415:
+                raise RuntimeError(
+                    "GitHub artifact download returned HTTP 415. "
+                    "The REST API currently expects the default GitHub JSON Accept header and returns a redirect URL for downloads."
+                ) from exc
+            raise
+
+    def list_repository_runs(self, per_page: int = 100) -> list[dict[str, Any]]:
+        url = f"{API_BASE_URL}/repos/{self.repo}/actions/runs?status=success&exclude_pull_requests=true&per_page={per_page}"
+        payload = self.get_json(url)
+        return list(payload.get("workflow_runs") or [])
 
     def get_latest_successful_run(self, workflow_file: str) -> dict[str, Any] | None:
         url = f"{API_BASE_URL}/repos/{self.repo}/actions/workflows/{workflow_file}/runs?status=success&per_page=1"
         payload = self.get_json(url)
         workflow_runs = payload.get("workflow_runs") or []
-        return workflow_runs[0] if workflow_runs else None
+        if workflow_runs:
+            return workflow_runs[0]
+
+        workflow_path_markers = (
+            f".github/workflows/{workflow_file}@",
+            f"/.github/workflows/{workflow_file}@",
+        )
+        for run in self.list_repository_runs():
+            run_path = str(run.get("path") or "")
+            if any(marker in run_path for marker in workflow_path_markers):
+                return run
+        return None
 
     def list_run_artifacts(self, run_id: int) -> list[dict[str, Any]]:
         url = f"{API_BASE_URL}/repos/{self.repo}/actions/runs/{run_id}/artifacts?per_page=100"
