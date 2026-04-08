@@ -202,13 +202,14 @@ def import_feedparser():
 def import_gemini():
     try:
         from google import genai
+        from google.genai import types as genai_types
     except ImportError as exc:
         raise SystemExit(
             "Missing dependency 'google-genai'. Install it with "
             "`pip install google-genai` or `pip install -r requirements.txt`."
         ) from exc
 
-    return genai
+    return genai, genai_types
 
 
 def build_query(competitors: Iterable[str], target_keyword: str, news_days: int) -> str:
@@ -542,14 +543,16 @@ def analyze_with_gemini(api_key: str, model_name: str, system_instruction: str, 
     if not api_key:
         return "⚠️ GEMINI_API_KEY 未設定，已略過 Gemini 分析。"
 
-    genai = import_gemini()
+    genai, genai_types = import_gemini()
     client = genai.Client(api_key=api_key)
 
     prompt = build_analysis_prompt(competitors, news_entries)
-    config = {"system_instruction": system_instruction} if system_instruction else {}
+    generate_content_kwargs = {"model": model_name, "contents": prompt}
+    if system_instruction:
+        generate_content_kwargs["config"] = genai_types.GenerateContentConfig(system_instruction=system_instruction)
 
     try:
-        response = client.models.generate_content(model=model_name, contents=prompt, config=config)
+        response = client.models.generate_content(**generate_content_kwargs)
     except Exception as exc:
         return f"❌ AI 辨識發生錯誤: {exc}"
 
