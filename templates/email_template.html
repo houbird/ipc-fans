@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${report_title}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f3f6fb;
+      color: #1f2937;
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      line-height: 1.6;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    img {
+      border: 0;
+      display: block;
+      max-width: 100%;
+    }
+
+    .wrapper {
+      width: 100%;
+      padding: 24px 12px;
+      background-color: #f3f6fb;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #dbe4f0;
+    }
+
+    .header {
+      padding: 28px 32px 20px;
+      background-color: #0f172a;
+      color: #ffffff;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #93c5fd;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .header h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      line-height: 1.25;
+    }
+
+    .header p {
+      margin: 0;
+      font-size: 15px;
+      color: #dbeafe;
+    }
+
+    .meta {
+      padding: 0 32px 24px;
+      background-color: #0f172a;
+    }
+
+    .meta td {
+      padding: 12px 14px;
+      background-color: #16233d;
+      color: #dbeafe;
+      font-size: 13px;
+      border: 1px solid #20314f;
+    }
+
+    .meta strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #93c5fd;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .section {
+      padding: 24px 32px 0;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 20px;
+      color: #0f172a;
+    }
+
+    .section-desc {
+      margin: 0;
+      color: #475569;
+      font-size: 14px;
+    }
+
+    .analysis-email {
+      padding: 24px 32px 8px;
+    }
+
+    .analysis-hero,
+    .analysis-section {
+      margin-bottom: 20px;
+      padding: 20px;
+      border: 1px solid #dbe4f0;
+      background-color: #f8fbff;
+    }
+
+    .analysis-kicker {
+      margin: 0 0 8px;
+      color: #2563eb;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .analysis-major {
+      margin: 0 0 14px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+
+    .analysis-section h3 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      color: #0f172a;
+    }
+
+    .keyword-list {
+      margin-bottom: 14px;
+    }
+
+    .keyword-chip {
+      display: inline-block;
+      margin: 0 8px 8px 0;
+      padding: 6px 10px;
+      background-color: #dbeafe;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .brief-list,
+    .signal-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #334155;
+    }
+
+    .brief-list li,
+    .signal-list li {
+      margin-bottom: 8px;
+    }
+
+    .heat-table th,
+    .heat-table td,
+    .source-table th,
+    .source-table td {
+      padding: 10px 12px;
+      border: 1px solid #dbe4f0;
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    .heat-table th,
+    .source-table th {
+      background-color: #eff6ff;
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+
+    .news-card {
+      margin-bottom: 14px;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      background-color: #ffffff;
+    }
+
+    .news-meta {
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #475569;
+    }
+
+    .news-company {
+      font-weight: 700;
+      color: #1d4ed8;
+      margin-right: 10px;
+    }
+
+    .news-impact {
+      font-weight: 700;
+      color: #b45309;
+    }
+
+    .news-card h4 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+
+    .news-card p {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #334155;
+    }
+
+    .source-wrap {
+      padding: 8px 32px 32px;
+    }
+
+    .source-note {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .link-cell a {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+
+    .footer {
+      padding: 18px 32px 32px;
+      color: #64748b;
+      font-size: 12px;
+    }
+
+    @media screen and (max-width: 640px) {
+      .header,
+      .meta,
+      .section,
+      .analysis-email,
+      .source-wrap,
+      .footer {
+        padding-left: 18px !important;
+        padding-right: 18px !important;
+      }
+
+      .header h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <table class="container" role="presentation" align="center">
+      <tr>
+        <td class="header">
+          <p class="eyebrow">Weekly Executive Brief</p>
+          <h1>${email_subject}</h1>
+        </td>
+      </tr>
+      <tr>
+        <td class="meta">
+          <table role="presentation">
+            <tr>
+              <td>
+                <strong>Week Range</strong>
+                ${week_range}
+              </td>
+              <td>
+                <strong>Generated At</strong>
+                ${generated_at}
+              </td>
+              <td>
+                <strong>Tracked News</strong>
+                ${news_count}
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Model</strong>
+                ${model_name}
+              </td>
+              <td>
+                <strong>Keyword</strong>
+                ${target_keyword}
+              </td>
+              <td>
+                <strong>Output</strong>
+                ${report_path}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td class="section">
+          <h2 class="section-title">本週新聞摘要</h2>
+        </td>
+      </tr>
+      <tr>
+        <td>${analysis_block}</td>
+      </tr>
+      <tr>
+        <td class="source-wrap">
+          <h2 class="section-title">附錄：原始新聞清單</h2>
+          <p class="source-note">保留來源、時間與連結，方便延伸閱讀或轉交團隊做後續追蹤。</p>
+          <table class="source-table" role="presentation">
+            <thead>
+              <tr>
+                <th style="width: 44px;">#</th>
+                <th style="width: 120px;">Company</th>
+                <th>Title</th>
+                <th style="width: 140px;">Source</th>
+                <th style="width: 140px;">Time</th>
+                <th style="width: 72px;">Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${news_rows}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td class="footer">
+          This report is generated by an AI assistant based on news data collected from various sources. The analysis and insights provided are for informational purposes only.
+        </td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>
