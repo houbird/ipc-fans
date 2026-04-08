@@ -12,11 +12,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 API_BASE_URL = "https://api.github.com"
 API_VERSION = "2022-11-28"
 USER_AGENT = "ipc-fans-pages-builder/1.0"
+
+
+class NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        return None
 
 
 @dataclass(frozen=True)
@@ -55,17 +60,26 @@ class GitHubClient:
         with urlopen(self._request(url)) as response:
             return json.load(response)
 
-    def download_bytes(self, url: str) -> bytes:
+    def _get_redirect_location(self, url: str) -> str:
+        opener = build_opener(NoRedirectHandler)
+        request = self._request(url)
         try:
-            with urlopen(self._request(url)) as response:
-                return response.read()
+            with opener.open(request) as response:
+                location = response.headers.get("Location")
         except HTTPError as exc:
-            if exc.code == 415:
-                raise RuntimeError(
-                    "GitHub artifact download returned HTTP 415. "
-                    "The REST API currently expects the default GitHub JSON Accept header and returns a redirect URL for downloads."
-                ) from exc
-            raise
+            if exc.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = exc.headers.get("Location")
+
+        if not location:
+            raise RuntimeError(f"GitHub artifact download did not return a redirect location: {url}")
+        return str(location)
+
+    def download_bytes(self, url: str) -> bytes:
+        redirect_url = self._get_redirect_location(url)
+        download_request = Request(redirect_url, headers={"User-Agent": USER_AGENT})
+        with urlopen(download_request) as response:
+            return response.read()
 
     def list_repository_runs(self, per_page: int = 100) -> list[dict[str, Any]]:
         url = f"{API_BASE_URL}/repos/{self.repo}/actions/runs?status=success&exclude_pull_requests=true&per_page={per_page}"
