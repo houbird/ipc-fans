@@ -546,7 +546,7 @@ def analyze_with_gemini(api_key: str, model_name: str, system_instruction: str, 
     client = genai.Client(api_key=api_key)
 
     prompt = build_analysis_prompt(competitors, news_entries)
-    config = {"system_instruction": system_instruction} if system_instruction else None
+    config = {"system_instruction": system_instruction} if system_instruction else {}
 
     try:
         response = client.models.generate_content(model=model_name, contents=prompt, config=config)
