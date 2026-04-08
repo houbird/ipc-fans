@@ -1,0 +1,27 @@
+name: IPC Fans Daily Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8 * * *'
+      timezone: Asia/Taipei
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ipc-fans-daily-report
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    uses: ./.github/workflows/report-reusable.yml
+    with:
+      cadence: daily
+      report-title: IPC / Edge AI 競品每日新聞 Email
+      news-days: 1
+      per-company-limit: 2
+      artifact-name: report-daily
+      artifact-retention-days: 14
+    secrets:
+      gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

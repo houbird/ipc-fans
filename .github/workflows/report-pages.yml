@@ -1,0 +1,75 @@
+name: IPC Fans Pages Publish
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - IPC Fans Daily Report
+      - IPC Fans Weekly Report
+    types:
+      - completed
+
+concurrency:
+  group: ipc-fans-pages-site
+  cancel-in-progress: true
+
+jobs:
+  build-site:
+    name: Build Pages site
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    env:
+      TZ: Asia/Taipei
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Assemble static site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python scripts/assemble_pages_site.py \
+            --repo "${{ github.repository }}" \
+            --token "$GITHUB_TOKEN" \
+            --output-dir site \
+            --daily-workflow-file report-daily.yml \
+            --daily-artifact-name report-daily \
+            --weekly-workflow-file report-weekly.yml \
+            --weekly-artifact-name report-weekly
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/
+          retention-days: 1
+
+  deploy:
+    name: Deploy Pages site
+    needs: build-site
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

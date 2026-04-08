@@ -1184,6 +1184,41 @@ def write_report(output_path: Path, html_report: str) -> None:
     output_path.write_text(html_report, encoding="utf-8")
 
 
+def build_metadata_payload(
+    settings: ReportSettings,
+    generated_at: datetime,
+    entries,
+    analysis: dict[str, Any],
+    output_path: Path,
+) -> dict[str, Any]:
+    return {
+        "report_title": settings.report_title,
+        "email_subject": normalize_text(analysis.get("email_subject"), settings.report_title),
+        "week_range": normalize_text(analysis.get("week_range"), build_week_range_label(generated_at, settings.news_days)),
+        "generated_at": generated_at.astimezone().isoformat(timespec="seconds"),
+        "model_name": settings.model_name,
+        "target_keyword": settings.target_keyword,
+        "news_days": settings.news_days,
+        "per_company_news_limit": settings.per_company_news_limit,
+        "news_count": len(entries),
+        "competitors": list(settings.competitors),
+        "report_path": output_path.name,
+        "major_shift": normalize_text(analysis.get("major_shift")),
+        "top_keywords": list(analysis.get("top_keywords") or []),
+        "executive_summary": list(analysis.get("executive_summary") or []),
+        "conclusion_actions": list(analysis.get("conclusion_actions") or []),
+        "watchlist": list(analysis.get("watchlist") or []),
+    }
+
+
+def write_metadata(metadata_output_path: Path, payload: dict[str, Any]) -> None:
+    metadata_output_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def print_console_summary(settings: ReportSettings, generated_at: datetime, entries, analysis: dict[str, Any], output_path: Path) -> None:
     print("\n" + "=" * 50)
     print(f"        🏆 {settings.report_title} 🏆")
@@ -1206,7 +1241,7 @@ def print_console_summary(settings: ReportSettings, generated_at: datetime, entr
         print("\n今日無相關重要新聞。")
 
 
-def generate_report(settings: ReportSettings, output_path: Path) -> Path:
+def generate_report(settings: ReportSettings, output_path: Path, metadata_output_path: Path | None = None) -> Path:
     entries, query, rss_url = fetch_competitor_news(
         settings.competitors,
         settings.target_keyword,
@@ -1214,7 +1249,7 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
         settings.news_days,
         settings.per_company_news_limit,
     )
-    generated_at = datetime.now()
+    generated_at = datetime.now().astimezone()
 
     analysis = analyze_with_gemini(
         settings.api_key,
@@ -1237,6 +1272,9 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
     )
     report_html = render_report(settings.template_path, template_context)
     write_report(output_path, report_html)
+    if metadata_output_path is not None:
+        metadata_payload = build_metadata_payload(settings, generated_at, entries, analysis, output_path)
+        write_metadata(metadata_output_path, metadata_payload)
     print_console_summary(settings, generated_at, entries, analysis, output_path)
     return output_path
 
@@ -1244,6 +1282,7 @@ def generate_report(settings: ReportSettings, output_path: Path) -> Path:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate an IPC / Edge AI weekly email digest as HTML.")
     parser.add_argument("--output", help="HTML report output path")
+    parser.add_argument("--metadata-output", help="Optional JSON metadata output path")
     parser.add_argument("--template", help="Override the HTML report template path")
     parser.add_argument("--news-days", type=int, default=None, help="News lookback window in days")
     parser.add_argument("--per-company-limit", type=int, default=None, help="Maximum news items kept for each company")
@@ -1255,7 +1294,8 @@ def main(argv: list[str] | None = None) -> int:
     load_env_file()
     settings = load_settings(args.template, args.news_days, args.per_company_limit)
     output_path = build_output_path(args.output)
-    generate_report(settings, output_path)
+    metadata_output_path = Path(args.metadata_output).expanduser() if args.metadata_output else None
+    generate_report(settings, output_path, metadata_output_path)
     return 0
 
 

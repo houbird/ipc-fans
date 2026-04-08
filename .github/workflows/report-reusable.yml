@@ -1,0 +1,115 @@
+name: IPC Fans Report Reusable
+
+on:
+  workflow_call:
+    inputs:
+      cadence:
+        description: Report cadence label
+        required: true
+        type: string
+      report-title:
+        description: Report title exposed to the HTML output
+        required: true
+        type: string
+      news-days:
+        description: News lookback window in days
+        required: true
+        type: number
+      per-company-limit:
+        description: Maximum retained items per company
+        required: true
+        type: number
+      artifact-name:
+        description: Artifact name used for downstream Pages assembly
+        required: true
+        type: string
+      artifact-retention-days:
+        description: Artifact retention period
+        required: false
+        default: 30
+        type: number
+      python-version:
+        description: Python version for the runner
+        required: false
+        default: '3.12'
+        type: string
+    secrets:
+      gemini-api-key:
+        description: Gemini API key used for analysis
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate ${{ inputs.cadence }} report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Taipei
+      REPORT_TITLE: ${{ inputs.report-title }}
+      GEMINI_API_KEY: ${{ secrets.gemini-api-key }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate HTML report
+        run: |
+          set -euo pipefail
+          output_dir="dist/${{ inputs.cadence }}"
+          mkdir -p "$output_dir"
+          ./scripts/report.sh \
+            --output "$output_dir/report.html" \
+            --metadata-output "$output_dir/metadata.json" \
+            --news-days "${{ inputs.news-days }}" \
+            --per-company-limit "${{ inputs.per-company-limit }}"
+
+      - name: Publish workflow summary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata_path = Path('dist') / '${{ inputs.cadence }}' / 'metadata.json'
+          metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+          lines = [
+              f"# {metadata['report_title']}",
+              "",
+              f"- Cadence: ${{ inputs.cadence }}",
+              f"- Subject: {metadata['email_subject']}",
+              f"- Week Range: {metadata['week_range']}",
+              f"- News Count: {metadata['news_count']}",
+              f"- Generated At: {metadata['generated_at']}",
+              "",
+              "## Executive Summary",
+          ]
+          lines.extend(f"- {item}" for item in metadata.get('executive_summary', []))
+          summary_path = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          summary_path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+          PY
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/${{ inputs.cadence }}/
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact-retention-days }}
