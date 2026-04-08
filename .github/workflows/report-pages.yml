@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   workflow_run:
     workflows:
-      - IPC Fans Daily Report
-      - IPC Fans Weekly Report
+      - IPC Fans 1-Day Report
+      - IPC Fans 7-Day Report
     types:
       - completed
 

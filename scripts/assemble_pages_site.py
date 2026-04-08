@@ -198,14 +198,14 @@ def render_status_card(report: PublishedReport | None, fallback_title: str, path
     news_count = html.escape(str(metadata.get("news_count") or 0))
     major_shift = html.escape(str(metadata.get("major_shift") or "無"))
     title = html.escape(str(metadata.get("email_subject") or fallback_title))
-    week_range = html.escape(str(metadata.get("week_range") or ""))
+    report_range = html.escape(str(metadata.get("report_range") or metadata.get("week_range") or ""))
 
     return (
         '<article class="card">'
         f"<div class=\"card-head\"><span class=\"badge\">{html.escape(report.spec.label)}</span>"
         f"<a class=\"link\" href=\"{path_prefix}/{report.spec.slug}/\">開啟報告</a></div>"
         f"<h2>{title}</h2>"
-        f"<p class=\"meta\">區間：{week_range or '未提供'} · 新聞數：{news_count} · 更新：{generated_at}</p>"
+        f"<p class=\"meta\">區間：{report_range or '未提供'} · 新聞數：{news_count} · 更新：{generated_at}</p>"
         f"<p class=\"major\">{major_shift}</p>"
         f"<div class=\"chips\">{keywords_html}</div>"
         f"<ul>{summary_html}</ul>"
@@ -219,7 +219,7 @@ def build_index_html(reports: list[PublishedReport | None]) -> str:
     cards_html = "".join(
         render_status_card(
             report,
-            fallback_title="IPC / Edge AI 競品報告",
+            fallback_title="IPC / Edge AI 產業報告",
             path_prefix=".",
         )
         for report in reports
@@ -326,8 +326,8 @@ def build_index_html(reports: list[PublishedReport | None]) -> str:
   <main class=\"page\">
     <section class=\"hero\">
       <span class=\"eyebrow\">GitHub Pages Portal</span>
-      <h1>IPC / Edge AI 競品報告入口</h1>
-      <p>固定入口提供 daily 與 weekly 最新版本。完整歷史輸出保留在 GitHub Actions artifacts，Pages 僅承載最新可閱讀版本。</p>
+    <h1>IPC / Edge AI 產業報告入口</h1>
+    <p>固定入口提供不同天數區間的最新版本。完整歷史輸出保留在 GitHub Actions artifacts，Pages 僅承載最新可閱讀版本。</p>
       <p style=\"margin-top: 10px;\">站點更新時間：{html.escape(generated_at)}</p>
     </section>
     <section class=\"cards\">{cards_html}</section>
@@ -346,12 +346,12 @@ def main() -> int:
 
     client = GitHubClient(repo=args.repo, token=args.token)
     specs = [
-        CadenceSpec("daily", "Daily", args.daily_workflow_file, args.daily_artifact_name),
-        CadenceSpec("weekly", "Weekly", args.weekly_workflow_file, args.weekly_artifact_name),
+        CadenceSpec("daily", "1 Day", args.daily_workflow_file, args.daily_artifact_name),
+        CadenceSpec("weekly", "7 Days", args.weekly_workflow_file, args.weekly_artifact_name),
     ]
     reports = [load_artifact_bundle(client, spec, output_dir) for spec in specs]
     if all(report is None for report in reports):
-        raise SystemExit("No successful daily or weekly report artifacts were found.")
+        raise SystemExit("No successful report artifacts were found.")
 
     index_html = build_index_html(reports)
     (output_dir / "index.html").write_text(index_html, encoding="utf-8")

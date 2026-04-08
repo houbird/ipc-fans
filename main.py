@@ -21,8 +21,8 @@ from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE_PATH = BASE_DIR / "templates" / "email_template.html"
-LEGACY_REPORT_TITLE = "競品市場情報每日報告"
-DEFAULT_REPORT_TITLE = "IPC / Edge AI 競品每週新聞 Email"
+DEFAULT_REPORT_OUTPUT_DIR = BASE_DIR / "reports"
+DEFAULT_REPORT_TITLE = "IPC / Edge AI 區間新聞 Email"
 DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
 DEFAULT_COMPETITORS = (
     "AAEON",
@@ -62,14 +62,9 @@ GEMINI_MAX_RETRIES = 3
 GEMINI_RETRYABLE_MARKERS = ("503", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "429")
 AMBIGUOUS_COMPETITOR_NAMES = frozenset({"arbor", "yuan"})
 IMPACT_LEVELS = ("★★★★★", "★★★★☆", "★★★☆☆", "★★☆☆☆", "★☆☆☆☆")
-LEGACY_SYSTEM_INSTRUCTION = (
-    "你是一位專業的工業電腦 (IPC) 與嵌入式 AI 產業分析師，熟悉邊緣運算、工業自動化及競品市場動態。"
-    "你的任務是協助用戶分析競爭對手的最新新聞，提供客觀、精確且具洞察力的每日競品情報。"
-    "回應時請使用繁體中文，條列清晰，並以產業視角提供有價值的觀察與建議。"
-)
 DEFAULT_SYSTEM_INSTRUCTION = (
-    "你是一位專業的工業電腦 (IPC) 與嵌入式 AI 產業分析師，熟悉邊緣運算、工業自動化及競品市場動態。"
-    "你的任務是協助用戶整理競爭對手的每週新聞，輸出適合高階主管快速閱讀的 email 摘要。"
+    "你是一位專業的工業電腦 (IPC) 與嵌入式 AI 產業分析師，熟悉邊緣運算、工業自動化及產業市場動態。"
+    "你的任務是協助用戶整理追蹤企業在指定天數區間內的新聞，輸出適合高階主管快速閱讀的 email 摘要。"
     "回應時請使用繁體中文、結論先行、避免流水帳，並以產業視角提供具行動性的觀察與建議。"
 )
 
@@ -158,9 +153,13 @@ def build_output_path(raw_output: str | None) -> Path:
     if raw_output:
         return Path(raw_output).expanduser()
 
-    output_dir = Path(os.getenv("REPORT_OUTPUT_DIR", ".")).expanduser()
+    raw_output_dir = os.getenv("REPORT_OUTPUT_DIR", "").strip()
+    if not raw_output_dir or raw_output_dir == ".":
+        output_dir = DEFAULT_REPORT_OUTPUT_DIR
+    else:
+        output_dir = Path(raw_output_dir).expanduser()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return output_dir / f"weekly-email-{timestamp}.html"
+    return output_dir / f"range-email-{timestamp}.html"
 
 
 def load_settings(
@@ -171,8 +170,6 @@ def load_settings(
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     model_name = os.getenv("GEMINI_MODEL", DEFAULT_MODEL_NAME).strip() or DEFAULT_MODEL_NAME
     system_instruction = os.getenv("LLM_SYSTEM_INSTRUCTION", DEFAULT_SYSTEM_INSTRUCTION).strip() or DEFAULT_SYSTEM_INSTRUCTION
-    if system_instruction == LEGACY_SYSTEM_INSTRUCTION:
-        system_instruction = DEFAULT_SYSTEM_INSTRUCTION
     competitors = parse_csv_env(os.getenv("COMPETITORS"), DEFAULT_COMPETITORS)
     target_keyword = os.getenv("TARGET_KEYWORD", DEFAULT_TARGET_KEYWORD).strip() or DEFAULT_TARGET_KEYWORD
     news_limit = parse_positive_int(os.getenv("NEWS_LIMIT"), DEFAULT_NEWS_LIMIT, "NEWS_LIMIT")
@@ -187,8 +184,6 @@ def load_settings(
     if per_company_limit_override is not None:
         per_company_news_limit = validate_positive_int(per_company_limit_override, "--per-company-limit")
     report_title = os.getenv("REPORT_TITLE", DEFAULT_REPORT_TITLE).strip() or DEFAULT_REPORT_TITLE
-    if report_title == LEGACY_REPORT_TITLE:
-        report_title = DEFAULT_REPORT_TITLE
     template_path = resolve_template_path(template_override or os.getenv("REPORT_TEMPLATE_PATH"))
 
     return ReportSettings(
@@ -236,7 +231,7 @@ def build_query(competitors: Iterable[str], target_keyword: str, news_days: int)
     return f"{base_query} when:{news_days}d"
 
 
-def build_week_range_label(generated_at: datetime, news_days: int) -> str:
+def build_report_range_label(generated_at: datetime, news_days: int) -> str:
     end_date = generated_at.date()
     start_date = (generated_at - timedelta(days=max(news_days - 1, 0))).date()
     return f"{start_date:%Y/%m/%d} - {end_date:%Y/%m/%d}"
@@ -275,13 +270,13 @@ def build_news_digest_line(entry, index: int) -> str:
     ).strip()
 
 
-def build_weekly_email_schema() -> dict[str, Any]:
+def build_range_email_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
         "required": [
             "email_subject",
-            "week_range",
+            "report_range",
             "top_keywords",
             "major_shift",
             "executive_summary",
@@ -293,22 +288,22 @@ def build_weekly_email_schema() -> dict[str, Any]:
         "properties": {
             "email_subject": {
                 "type": "string",
-                "description": "適合作為每週新聞 email 主旨的一句話標題。",
+                "description": "適合作為區間新聞 email 主旨的一句話標題。",
             },
-            "week_range": {
+            "report_range": {
                 "type": "string",
-                "description": "本次週報涵蓋的日期區間，例如 2026/04/02 - 2026/04/08。",
+                "description": "本次報告涵蓋的日期區間，例如 2026/04/02 - 2026/04/08。",
             },
             "top_keywords": {
                 "type": "array",
-                "description": "本週最重要的 3 個趨勢關鍵詞。",
+                "description": "本次區間最重要的 3 個趨勢關鍵詞。",
                 "minItems": 3,
                 "maxItems": 3,
                 "items": {"type": "string"},
             },
             "major_shift": {
                 "type": "string",
-                "description": "用一句話總結本週最重要或最震撼的變化。",
+                "description": "用一句話總結本次區間最重要或最明顯的變化。",
             },
             "executive_summary": {
                 "type": "array",
@@ -392,7 +387,7 @@ def build_weekly_email_schema() -> dict[str, Any]:
                                     },
                                     "why_it_matters": {
                                         "type": "string",
-                                        "description": "說明這則新聞對市場或競品格局的重要性。",
+                                        "description": "說明這則新聞對市場或產業格局的重要性。",
                                     },
                                     "suggested_watch": {
                                         "type": "string",
@@ -413,7 +408,7 @@ def build_weekly_email_schema() -> dict[str, Any]:
             },
             "watchlist": {
                 "type": "array",
-                "description": "下週應追蹤的 2 到 4 個訊號。",
+                "description": "下個區間應追蹤的 2 到 4 個訊號。",
                 "minItems": 2,
                 "maxItems": 4,
                 "items": {"type": "string"},
@@ -423,9 +418,9 @@ def build_weekly_email_schema() -> dict[str, Any]:
 
 
 def build_fallback_analysis_payload(news_entries, news_days: int, generated_at: datetime, reason: str) -> dict[str, Any]:
-    week_range = build_week_range_label(generated_at, news_days)
+    report_range = build_report_range_label(generated_at, news_days)
     top_entries = list(news_entries[:3])
-    top_keywords = ["Edge AI", "Industrial PC", "競品動態"]
+    top_keywords = ["Edge AI", "Industrial PC", "市場動態"]
     heat_ranking = []
 
     for index, entry in enumerate(top_entries, start=1):
@@ -433,7 +428,7 @@ def build_fallback_analysis_payload(news_entries, news_days: int, generated_at: 
             {
                 "impact_level": IMPACT_LEVELS[min(index - 1, len(IMPACT_LEVELS) - 1)],
                 "company_or_tech": entry_company_text(entry),
-                "core_issue": normalize_title(normalize_text(entry.get("title"), "本週重點新聞")),
+                "core_issue": normalize_title(normalize_text(entry.get("title"), "本次重點新聞")),
             }
         )
 
@@ -453,7 +448,7 @@ def build_fallback_analysis_payload(news_entries, news_days: int, generated_at: 
                 "company_or_tech": entry_company_text(entry),
                 "impact_level": "★★★☆☆",
                 "headline": normalize_title(normalize_text(entry.get("title"), "（無標題）")),
-                "key_summary": normalize_summary_text(entry.get("summary"), "此則新聞可作為本週競品動態觀察樣本。"),
+                "key_summary": normalize_summary_text(entry.get("summary"), "此則新聞可作為本次區間產業動態觀察樣本。"),
                 "why_it_matters": "建議結合產品布局、合作對象與產業位置評估其後續影響。",
                 "suggested_watch": "觀察後續是否延伸到新產品、專案落地或財務表現。",
             }
@@ -462,33 +457,33 @@ def build_fallback_analysis_payload(news_entries, news_days: int, generated_at: 
     if not section_items:
         section_items.append(
             {
-                "company_or_tech": "本週無重大新聞",
+                "company_or_tech": "本次區間無重大新聞",
                 "impact_level": "★☆☆☆☆",
-                "headline": "本週沒有足夠新聞可供分析",
-                "key_summary": "目前未取得足夠的競品新聞，建議擴大關鍵詞或延長觀察區間。",
+                "headline": "本次區間沒有足夠新聞可供分析",
+                "key_summary": "目前未取得足夠的產業新聞，建議擴大關鍵詞或延長觀察區間。",
                 "why_it_matters": "資料量不足會降低摘要判斷力，容易讓結論失真。",
-                "suggested_watch": "下週可調整搜尋範圍或補充其他來源。",
+                "suggested_watch": "下個區間可調整搜尋範圍或補充其他來源。",
             }
         )
 
     return {
-        "email_subject": f"IPC / Edge AI 每週新聞摘要 | {week_range}",
-        "week_range": week_range,
+        "email_subject": f"IPC / Edge AI 區間新聞摘要 | {report_range}",
+        "report_range": report_range,
         "top_keywords": top_keywords,
         "major_shift": reason,
         "executive_summary": [
-            f"本次整理涵蓋近 {news_days} 天的 IPC / Edge AI 競品新聞。",
+            f"本次整理涵蓋近 {news_days} 天的 IPC / Edge AI 產業新聞。",
             f"共納入 {len(news_entries)} 則新聞，建議優先查看競爭熱度排行與重點分組。",
             "若模型輸出異常，建議保留人工覆核與主題微調流程。",
         ],
         "heat_ranking": heat_ranking,
         "news_sections": [{"title": "[新聞概覽]", "items": section_items}],
         "conclusion_actions": [
-            "先用本週的熱度排行判斷哪些競品值得進一步追蹤。",
+            "先用本次區間的熱度排行判斷哪些公司值得進一步追蹤。",
             "若要提升判讀品質，建議逐步增加摘要與日期等上下文欄位。",
         ],
         "watchlist": [
-            "觀察高熱度新聞是否在下週出現第二波延伸消息。",
+            "觀察高熱度新聞是否在下個區間出現第二波延伸消息。",
             "持續追蹤 AI 伺服器、開放自動化與組織整合相關主題。",
         ],
     }
@@ -587,7 +582,7 @@ def normalize_analysis_payload(payload: Any, fallback: dict[str, Any]) -> dict[s
 
     normalized = {
         "email_subject": normalize_text(payload.get("email_subject"), fallback["email_subject"]),
-        "week_range": normalize_text(payload.get("week_range"), fallback["week_range"]),
+        "report_range": normalize_text(payload.get("report_range"), fallback["report_range"]),
         "top_keywords": normalize_string_list(payload.get("top_keywords"), fallback["top_keywords"], min_items=3, max_items=3),
         "major_shift": normalize_text(payload.get("major_shift"), fallback["major_shift"]),
         "executive_summary": normalize_string_list(
@@ -948,21 +943,21 @@ def entry_source_text(entry) -> str:
 
 
 def build_analysis_prompt(competitors: tuple[str, ...], news_entries, news_days: int, generated_at: datetime) -> str:
-    week_range = build_week_range_label(generated_at, news_days)
+    report_range = build_report_range_label(generated_at, news_days)
     news_lines = [build_news_digest_line(entry, index) for index, entry in enumerate(news_entries, start=1)]
 
     return dedent(
         f"""
-        你要根據提供的新聞資料，為高階主管撰寫一封「IPC / Edge AI 競品每週新聞 email」。
+        你要根據提供的新聞資料，為高階主管撰寫一封「IPC / Edge AI 區間新聞 email」。
         觀察對象：{', '.join(competitors)}
-        日期區間：{week_range}
+        日期區間：{report_range}
         新聞視窗：近 {news_days} 天
 
         請遵守以下原則：
         1. 僅根據提供的新聞內容進行推論，不要虛構不存在的公司動作或數字。
         2. 內容要結論先行，避免流水帳，不要只是重寫新聞標題。
         3. `top_keywords` 請輸出 3 個短詞，不要是完整句子。
-        4. `major_shift` 必須是一句話，點出本週最大的變化。
+        4. `major_shift` 必須是一句話，點出本次區間最大的變化。
         5. `executive_summary` 請輸出 2 到 3 點，適合主管 1 分鐘內讀完。
         6. `heat_ranking` 請以市場影響度排序。
         7. `news_sections` 請優先使用這些區塊名稱做分組：[市場合作]、[組織 / 財報動態]、[技術亮點]、[產品 / 解決方案進展]。
@@ -984,7 +979,7 @@ def analyze_with_gemini(
     generated_at: datetime,
 ) -> dict[str, Any]:
     if not news_entries:
-        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "本週無足夠的 IPC / Edge AI 競品新聞，未送出 Gemini 分析。")
+        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "本次區間無足夠的 IPC / Edge AI 產業新聞，未送出 Gemini 分析。")
 
     if not api_key:
         return build_fallback_analysis_payload(news_entries, news_days, generated_at, "⚠️ GEMINI_API_KEY 未設定，已略過 Gemini 分析。")
@@ -992,12 +987,12 @@ def analyze_with_gemini(
     genai, _ = import_gemini()
     client = genai.Client(api_key=api_key)
 
-    fallback = build_fallback_analysis_payload(news_entries, news_days, generated_at, "模型暫時無法提供完整摘要，已回退為系統預設週報結構。")
+    fallback = build_fallback_analysis_payload(news_entries, news_days, generated_at, "模型暫時無法提供完整摘要，已回退為系統預設區間報告結構。")
     prompt = build_analysis_prompt(competitors, news_entries, news_days, generated_at)
     generate_content_kwargs = {"model": model_name, "contents": prompt}
     config: dict[str, Any] = {
         "response_mime_type": "application/json",
-        "response_json_schema": build_weekly_email_schema(),
+        "response_json_schema": build_range_email_schema(),
     }
     if system_instruction:
         config["system_instruction"] = system_instruction
@@ -1014,7 +1009,7 @@ def analyze_with_gemini(
             is_retryable = any(marker in error_text.upper() for marker in GEMINI_RETRYABLE_MARKERS)
             if not is_retryable or attempt > GEMINI_MAX_RETRIES:
                 print(f"⚠️ Gemini 分析失敗，不再重試 | {exc.__class__.__name__}: {exc}")
-                return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 服務暫時不可用，已改用預設週報骨架。")
+                return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 服務暫時不可用，已改用預設區間報告骨架。")
 
             backoff_seconds = min(2 ** (attempt - 1), 8)
             print(
@@ -1024,16 +1019,16 @@ def analyze_with_gemini(
             time.sleep(backoff_seconds)
 
     if response is None:
-        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 服務暫時不可用，已改用預設週報骨架。")
+        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 服務暫時不可用，已改用預設區間報告骨架。")
 
     text = getattr(response, "text", "").strip()
     if not text:
-        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 沒有回傳內容，已改用預設週報骨架。")
+        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 沒有回傳內容，已改用預設區間報告骨架。")
 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 回傳格式不穩定，已改用預設週報骨架。")
+        return build_fallback_analysis_payload(news_entries, news_days, generated_at, "Gemini 回傳格式不穩定，已改用預設區間報告骨架。")
 
     return normalize_analysis_payload(payload, fallback)
 
@@ -1098,7 +1093,7 @@ def render_analysis_block(analysis: dict[str, Any]) -> str:
         f'{render_bullet_list(analysis["executive_summary"], "brief-list")}'
         '</section>'
         '<section class="analysis-section">'
-        '<h3>競爭熱度排行</h3>'
+        '<h3>追蹤熱度排行</h3>'
         '<table class="heat-table" role="presentation">'
         '<thead><tr><th>影響等級</th><th>受訪企業 / 技術</th><th>核心議題</th></tr></thead>'
         f'<tbody>{render_heat_ranking_rows(analysis["heat_ranking"])}</tbody>'
@@ -1110,7 +1105,7 @@ def render_analysis_block(analysis: dict[str, Any]) -> str:
         f'{render_bullet_list(analysis["conclusion_actions"], "signal-list")}'
         '</section>'
         '<section class="analysis-section">'
-        '<h3>下週追蹤</h3>'
+        '<h3>下個區間追蹤</h3>'
         f'{render_bullet_list(analysis["watchlist"], "signal-list")}'
         '</section>'
         '</div>'
@@ -1119,7 +1114,7 @@ def render_analysis_block(analysis: dict[str, Any]) -> str:
 
 def render_news_rows(entries) -> str:
     if not entries:
-        return '<tr class="empty-state"><td colspan="6">今日無相關重要新聞。</td></tr>'
+        return '<tr class="empty-state"><td colspan="6">目前區間內無相關重要新聞。</td></tr>'
 
     rows = []
     for index, entry in enumerate(entries, start=1):
@@ -1152,14 +1147,14 @@ def build_template_context(
     analysis: dict[str, Any],
     output_path: Path,
 ) -> dict[str, str]:
-    week_range = normalize_text(analysis.get("week_range"), build_week_range_label(generated_at, settings.news_days))
+    report_range = normalize_text(analysis.get("report_range"), build_report_range_label(generated_at, settings.news_days))
     return {
         "report_title": html.escape(settings.report_title),
         "generated_at": html.escape(generated_at.strftime("%Y-%m-%d %H:%M:%S")),
         "model_name": html.escape(settings.model_name),
         "report_path": html.escape(output_path.name),
         "email_subject": html.escape(normalize_text(analysis.get("email_subject"), settings.report_title)),
-        "week_range": html.escape(week_range),
+        "report_range": html.escape(report_range),
         "competitors": html.escape("、".join(settings.competitors)),
         "target_keyword": html.escape(settings.target_keyword),
         "query": html.escape(query),
@@ -1194,7 +1189,7 @@ def build_metadata_payload(
     return {
         "report_title": settings.report_title,
         "email_subject": normalize_text(analysis.get("email_subject"), settings.report_title),
-        "week_range": normalize_text(analysis.get("week_range"), build_week_range_label(generated_at, settings.news_days)),
+        "report_range": normalize_text(analysis.get("report_range"), build_report_range_label(generated_at, settings.news_days)),
         "generated_at": generated_at.astimezone().isoformat(timespec="seconds"),
         "model_name": settings.model_name,
         "target_keyword": settings.target_keyword,
@@ -1238,7 +1233,7 @@ def print_console_summary(settings: ReportSettings, generated_at: datetime, entr
         for entry in entries:
             print(f"🔗 [{entry_company_text(entry)}] {entry.get('title') or '（無標題）'} -> {entry.get('link') or ''}")
     else:
-        print("\n今日無相關重要新聞。")
+        print("\n目前區間內無相關重要新聞。")
 
 
 def generate_report(settings: ReportSettings, output_path: Path, metadata_output_path: Path | None = None) -> Path:
@@ -1280,7 +1275,7 @@ def generate_report(settings: ReportSettings, output_path: Path, metadata_output
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate an IPC / Edge AI weekly email digest as HTML.")
+    parser = argparse.ArgumentParser(description="Generate an IPC / Edge AI range email digest as HTML.")
     parser.add_argument("--output", help="HTML report output path")
     parser.add_argument("--metadata-output", help="Optional JSON metadata output path")
     parser.add_argument("--template", help="Override the HTML report template path")

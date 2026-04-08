@@ -1,4 +1,4 @@
-name: IPC Fans Daily Report
+name: IPC Fans 1-Day Report
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ipc-fans-daily-report
+  group: ipc-fans-1-day-report
   cancel-in-progress: true
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
     uses: ./.github/workflows/report-reusable.yml
     with:
       cadence: daily
-      report-title: IPC / Edge AI 競品每日新聞 Email
+      report-title: IPC / Edge AI 1-Day 區間新聞 Email
       news-days: 1
       per-company-limit: 2
       artifact-name: report-daily

@@ -95,7 +95,7 @@ jobs:
               "",
               f"- Cadence: ${{ inputs.cadence }}",
               f"- Subject: {metadata['email_subject']}",
-              f"- Week Range: {metadata['week_range']}",
+              f"- Report Range: {metadata['report_range']}",
               f"- News Count: {metadata['news_count']}",
               f"- Generated At: {metadata['generated_at']}",
               "",
