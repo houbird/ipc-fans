@@ -1043,6 +1043,62 @@ def render_bullet_list(items: list[str], class_name: str) -> str:
     return f'<ul class="{class_name}">{bullets}</ul>' if bullets else ""
 
 
+def normalize_match_text(value: str | None) -> str:
+    text = normalize_title(normalize_text(value))
+    text = strip_html_tags(text)
+    text = re.sub(r"\s+", " ", text).strip().casefold()
+    return text
+
+
+def entry_match_terms(entry: Any) -> str:
+    parts = [
+        normalize_match_text(entry.get("title")),
+        normalize_match_text(entry_company_text(entry)),
+        normalize_match_text(entry_source_text(entry)),
+        normalize_match_text(entry.get("summary")),
+    ]
+    return " ".join(part for part in parts if part)
+
+
+def find_citation_entry(item: dict[str, Any], entries: list[Any], used_indices: set[int]) -> tuple[Any | None, int | None]:
+    item_headline = normalize_match_text(item.get("headline"))
+    item_company = normalize_match_text(item.get("company_or_tech"))
+    best_index: int | None = None
+    best_score = 0
+
+    for index, entry in enumerate(entries):
+        if index in used_indices:
+            continue
+
+        entry_title = normalize_match_text(entry.get("title"))
+        entry_terms = entry_match_terms(entry)
+        score = 0
+
+        if item_headline and entry_title and item_headline == entry_title:
+            score += 10
+        elif item_headline and entry_title and (item_headline in entry_title or entry_title in item_headline):
+            score += 6
+
+        if item_company and item_company in entry_terms:
+            score += 3
+
+        if item_headline and item_headline.split(" ")[0] in entry_terms:
+            score += 1
+
+        if score > best_score:
+            best_score = score
+            best_index = index
+
+    if best_index is not None and best_score > 0:
+        return entries[best_index], best_index
+
+    for index, entry in enumerate(entries):
+        if index not in used_indices:
+            return entry, index
+
+    return None, None
+
+
 def render_heat_ranking_rows(heat_ranking: list[dict[str, str]]) -> str:
     rows = []
     for item in heat_ranking:
@@ -1056,12 +1112,29 @@ def render_heat_ranking_rows(heat_ranking: list[dict[str, str]]) -> str:
     return "\n".join(rows)
 
 
-def render_news_sections(analysis: dict[str, Any]) -> str:
+def render_news_sections(analysis: dict[str, Any], entries) -> str:
     sections_html: list[str] = []
+    used_indices: set[int] = set()
 
     for section in analysis["news_sections"]:
         items_html: list[str] = []
         for item in section["items"]:
+            citation_entry, citation_index = find_citation_entry(item, entries, used_indices)
+            if citation_index is not None:
+                used_indices.add(citation_index)
+
+            citation_html = ""
+            if citation_entry is not None:
+                citation_link = html.escape(str(citation_entry.get("link") or "#"), quote=True)
+                citation_title = html.escape(normalize_title(normalize_text(citation_entry.get("title"), "原文")))
+                citation_source = html.escape(entry_source_text(citation_entry))
+                citation_html = (
+                    '<p class="news-citation">'
+                    '<strong>引用來源：</strong>'
+                    f'<a href="{citation_link}" target="_blank" rel="noreferrer">{citation_source} · {citation_title}</a>'
+                    '</p>'
+                )
+
             items_html.append(
                 "<article class=\"news-card\">"
                 f"<div class=\"news-meta\"><span class=\"news-company\">{html.escape(item['company_or_tech'])}</span>"
@@ -1070,6 +1143,7 @@ def render_news_sections(analysis: dict[str, Any]) -> str:
                 f"<p><strong>關鍵摘要：</strong>{html.escape(item['key_summary'])}</p>"
                 f"<p><strong>為何重要：</strong>{html.escape(item['why_it_matters'])}</p>"
                 f"<p><strong>建議觀察：</strong>{html.escape(item['suggested_watch'])}</p>"
+                f"{citation_html}"
                 "</article>"
             )
 
@@ -1083,7 +1157,7 @@ def render_news_sections(analysis: dict[str, Any]) -> str:
     return "".join(sections_html)
 
 
-def render_analysis_block(analysis: dict[str, Any]) -> str:
+def render_analysis_block(analysis: dict[str, Any], entries=None) -> str:
     return (
         '<div class="analysis-email">'
         '<section class="analysis-hero">'
@@ -1099,7 +1173,7 @@ def render_analysis_block(analysis: dict[str, Any]) -> str:
         f'<tbody>{render_heat_ranking_rows(analysis["heat_ranking"])}</tbody>'
         '</table>'
         '</section>'
-        f'{render_news_sections(analysis)}'
+        f'{render_news_sections(analysis, entries or [])}'
         '<section class="analysis-section">'
         '<h3>結論與建議</h3>'
         f'{render_bullet_list(analysis["conclusion_actions"], "signal-list")}'
@@ -1161,7 +1235,7 @@ def build_template_context(
         "rss_url": html.escape(rss_url, quote=True),
         "news_window": html.escape(f"近 {settings.news_days} 天"),
         "news_count": str(len(entries)),
-        "analysis_block": render_analysis_block(analysis),
+        "analysis_block": render_analysis_block(analysis, entries),
         "news_rows": render_news_rows(entries),
     }
 
