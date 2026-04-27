@@ -3,7 +3,7 @@ name: IPC Fans 7-Day Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 8 * * 1'
+    - cron: '19 7 * * 1'
       timezone: Asia/Taipei
 
 permissions:
