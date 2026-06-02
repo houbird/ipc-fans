@@ -233,7 +233,7 @@ def build_query(competitors: Iterable[str], target_keyword: str, news_days: int)
 
 def build_report_range_label(generated_at: datetime, news_days: int) -> str:
     end_date = generated_at.date()
-    start_date = (generated_at - timedelta(days=max(news_days, 1))).date()
+    start_date = (generated_at - timedelta(days=max(news_days, 0))).date()
     return f"{start_date:%Y/%m/%d} - {end_date:%Y/%m/%d}"
 
 
