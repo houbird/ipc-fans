@@ -159,10 +159,15 @@ def load_artifact_bundle(client: GitHubClient, spec: CadenceSpec, output_dir: Pa
             raise SystemExit(f"Artifact {spec.artifact_name} is missing report.html or metadata.json")
 
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        edm_report_name = Path(str(metadata.get("edm_report_path") or "report-edm.html")).name
+        edm_report_path = next(extract_dir.rglob(edm_report_name), None)
         destination_dir = output_dir / spec.slug
         destination_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(report_path, destination_dir / "index.html")
         shutil.copyfile(report_path, destination_dir / "latest.html")
+        if edm_report_path is not None:
+            shutil.copyfile(edm_report_path, destination_dir / "edm.html")
+            metadata["pages_edm_path"] = "edm.html"
 
         data_dir = output_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -199,6 +204,11 @@ def render_status_card(report: PublishedReport | None, fallback_title: str, path
     major_shift = html.escape(str(metadata.get("major_shift") or "無"))
     title = html.escape(str(metadata.get("email_subject") or fallback_title))
     report_range = html.escape(str(metadata.get("report_range") or metadata.get("week_range") or ""))
+    edm_link = ""
+    edm_path = metadata.get("pages_edm_path")
+    if edm_path:
+        edm_url = html.escape(f"{path_prefix}/{report.spec.slug}/{edm_path}", quote=True)
+        edm_link = f' · <a href="{edm_url}">EDM HTML</a>'
 
     return (
         '<article class="card">'
@@ -209,7 +219,7 @@ def render_status_card(report: PublishedReport | None, fallback_title: str, path
         f"<p class=\"major\">{major_shift}</p>"
         f"<div class=\"chips\">{keywords_html}</div>"
         f"<ul>{summary_html}</ul>"
-        f"<p class=\"muted\"><a href=\"{html.escape(report.run_url, quote=True)}\">查看 workflow run</a></p>"
+        f"<p class=\"muted\"><a href=\"{html.escape(report.run_url, quote=True)}\">查看 workflow run</a>{edm_link}</p>"
         "</article>"
     )
 
