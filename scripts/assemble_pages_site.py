@@ -17,6 +17,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 API_BASE_URL = "https://api.github.com"
 API_VERSION = "2022-11-28"
 USER_AGENT = "ipc-fans-pages-builder/1.0"
+DEFAULT_EDM_REPORT_NAME = "report-edm.html"
 
 
 class NoRedirectHandler(HTTPRedirectHandler):
@@ -159,8 +160,13 @@ def load_artifact_bundle(client: GitHubClient, spec: CadenceSpec, output_dir: Pa
             raise SystemExit(f"Artifact {spec.artifact_name} is missing report.html or metadata.json")
 
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        edm_report_name = Path(str(metadata.get("edm_report_path") or "report-edm.html")).name
-        edm_report_path = next(extract_dir.rglob(edm_report_name), None)
+        edm_report_name = Path(str(metadata.get("edm_report_path") or DEFAULT_EDM_REPORT_NAME)).name
+        edm_report_candidates = (
+            extract_dir / edm_report_name,
+            metadata_path.parent / edm_report_name,
+            report_path.parent / edm_report_name,
+        )
+        edm_report_path = next((path for path in edm_report_candidates if path.exists()), None)
         destination_dir = output_dir / spec.slug
         destination_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(report_path, destination_dir / "index.html")
