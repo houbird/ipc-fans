@@ -18,6 +18,8 @@ from urllib.parse import quote_plus
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from bs4 import BeautifulSoup
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_TEMPLATE_PATH = BASE_DIR / "templates" / "email_template.html"
@@ -1253,6 +1255,262 @@ def write_report(output_path: Path, html_report: str) -> None:
     output_path.write_text(html_report, encoding="utf-8")
 
 
+def build_edm_output_path(output_path: Path) -> Path:
+    suffix = output_path.suffix or ".html"
+    return output_path.with_name(f"{output_path.stem}-edm{suffix}")
+
+
+def _extract_meta_pairs(source_soup: BeautifulSoup) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for cell in source_soup.select(".meta td"):
+        label_node = cell.find("strong")
+        if label_node is None:
+            continue
+        label = normalize_text(label_node.get_text(" ", strip=True))
+        label_node.extract()
+        value = normalize_text(cell.get_text(" ", strip=True))
+        if label and value:
+            pairs.append((label, value))
+    return pairs
+
+
+def _extract_section_bullets(source_soup: BeautifulSoup, title: str) -> list[str]:
+    for heading in source_soup.find_all("h3"):
+        if normalize_text(heading.get_text(" ", strip=True)) != title:
+            continue
+        bullet_list = heading.find_next_sibling("ul")
+        if bullet_list is None:
+            return []
+        return [normalize_text(item.get_text(" ", strip=True)) for item in bullet_list.find_all("li")]
+    return []
+
+
+def _render_edm_rows(items: list[str]) -> str:
+    rows: list[str] = []
+    for item in items:
+        if not item:
+            continue
+        rows.append(
+            "<tr>"
+            '<td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#334155;">'
+            f"• {html.escape(item)}"
+            "</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _render_edm_meta_rows(pairs: list[tuple[str, str]]) -> str:
+    rows: list[str] = []
+    for label, value in pairs:
+        rows.append(
+            "<tr>"
+            '<td style="padding:6px 0;font-size:13px;line-height:18px;color:#334155;">'
+            f'<strong style="color:#0f172a;">{html.escape(label)}：</strong> {html.escape(value)}'
+            "</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _render_edm_news_rows(source_soup: BeautifulSoup) -> str:
+    rows: list[str] = []
+    for row in source_soup.select(".source-table tbody tr"):
+        cells = row.find_all("td")
+        if len(cells) < 6:
+            continue
+        index = normalize_text(cells[0].get_text(" ", strip=True))
+        company = normalize_text(cells[1].get_text(" ", strip=True))
+        title = normalize_text(cells[2].get_text(" ", strip=True))
+        source = normalize_text(cells[3].get_text(" ", strip=True))
+        published = normalize_text(cells[4].get_text(" ", strip=True))
+        link_tag = cells[5].find("a")
+        link = normalize_text(link_tag.get("href")) if link_tag is not None else ""
+        link_html = (
+            f'<a href="{html.escape(link, quote=True)}" '
+            'style="color:#2563eb;text-decoration:underline;">查看</a>'
+            if link
+            else "—"
+        )
+
+        rows.append(
+            "<tr>"
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{html.escape(index)}</td>'
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{html.escape(company)}</td>'
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{html.escape(title)}</td>'
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{html.escape(source)}</td>'
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{html.escape(published)}</td>'
+            f'<td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#334155;">{link_html}</td>'
+            "</tr>"
+        )
+
+    if rows:
+        return "".join(rows)
+    return (
+        "<tr>"
+        '<td colspan="6" style="padding:10px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;color:#64748b;">'
+        "目前區間內無相關重要新聞。"
+        "</td>"
+        "</tr>"
+    )
+
+
+def _render_edm_image_rows(source_soup: BeautifulSoup) -> str:
+    rows: list[str] = []
+    for image in source_soup.find_all("img"):
+        source = normalize_text(image.get("src"))
+        if not source:
+            continue
+        raw_width = normalize_text(image.get("width"), "620")
+        width = raw_width if raw_width.isdigit() else "620"
+        style = "display:block;width:100%;height:auto;"
+        alt = normalize_text(image.get("alt"))
+        rows.append(
+            "<tr>"
+            f'<td style="padding:0 0 10px 0;"><img src="{html.escape(source, quote=True)}" alt="{html.escape(alt)}" width="{width}" style="{style}" /></td>'
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def convert_report_html_to_edm(raw_html: str, report_title: str) -> str:
+    source_soup = BeautifulSoup(raw_html, "html.parser")
+    subject = normalize_text(
+        source_soup.select_one(".header h1").get_text(" ", strip=True) if source_soup.select_one(".header h1") else "",
+        report_title,
+    )
+    major_shift = normalize_text(
+        source_soup.select_one(".analysis-major").get_text(" ", strip=True).replace("重大變動提醒：", "", 1)
+        if source_soup.select_one(".analysis-major")
+        else ""
+    )
+    top_keywords = [normalize_text(node.get_text(" ", strip=True)) for node in source_soup.select(".keyword-chip")]
+    executive_summary = [normalize_text(node.get_text(" ", strip=True)) for node in source_soup.select(".brief-list li")]
+    conclusion_actions = _extract_section_bullets(source_soup, "結論與建議")
+    watchlist = _extract_section_bullets(source_soup, "下個區間追蹤")
+    meta_rows = _render_edm_meta_rows(_extract_meta_pairs(source_soup))
+    keyword_rows = _render_edm_rows(top_keywords)
+    summary_rows = _render_edm_rows(executive_summary)
+    conclusion_rows = _render_edm_rows(conclusion_actions)
+    watch_rows = _render_edm_rows(watchlist)
+    news_rows = _render_edm_news_rows(source_soup)
+    image_rows = _render_edm_image_rows(source_soup)
+    image_section = (
+        "<tr>"
+        '<td style="padding:0 24px 12px 24px;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">'
+        f"{image_rows}"
+        "</table>"
+        "</td>"
+        "</tr>"
+        if image_rows
+        else ""
+    )
+
+    return Template(
+        dedent(
+            """\
+            <!doctype html>
+            <html lang="zh-Hant">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>${subject}</title>
+            </head>
+            <body style="margin:0;padding:0;background-color:#f3f6fb;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#f3f6fb;">
+                <tr>
+                  <td align="center" style="padding:20px 10px;">
+                    <table role="presentation" width="620" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;max-width:620px;background-color:#ffffff;border:1px solid #dbe4f0;">
+                      <tr>
+                        <td style="padding:24px 24px 18px 24px;background-color:#0f172a;color:#ffffff;">
+                          <p style="margin:0 0 8px 0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:1px;color:#93c5fd;">EXECUTIVE BRIEF</p>
+                          <p style="margin:0;font-size:24px;line-height:32px;font-weight:700;color:#ffffff;">${subject}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:16px 24px 8px 24px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            ${meta_rows}
+                          </table>
+                        </td>
+                      </tr>
+                      ${image_section}
+                      <tr>
+                        <td style="padding:8px 24px 0 24px;">
+                          <p style="margin:0 0 8px 0;font-size:18px;line-height:24px;font-weight:700;color:#0f172a;">重大變動提醒</p>
+                          <p style="margin:0 0 16px 0;font-size:14px;line-height:22px;color:#334155;">${major_shift}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 4px 24px;">
+                          <p style="margin:0 0 8px 0;font-size:16px;line-height:22px;font-weight:700;color:#0f172a;">關鍵字</p>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            ${keyword_rows}
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 4px 24px;">
+                          <p style="margin:0 0 8px 0;font-size:16px;line-height:22px;font-weight:700;color:#0f172a;">區間新聞摘要</p>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            ${summary_rows}
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 4px 24px;">
+                          <p style="margin:0 0 8px 0;font-size:16px;line-height:22px;font-weight:700;color:#0f172a;">結論與建議</p>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            ${conclusion_rows}
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 16px 24px;">
+                          <p style="margin:0 0 8px 0;font-size:16px;line-height:22px;font-weight:700;color:#0f172a;">下個區間追蹤</p>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            ${watch_rows}
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:0 24px 24px 24px;">
+                          <p style="margin:0 0 10px 0;font-size:16px;line-height:22px;font-weight:700;color:#0f172a;">附錄：原始新聞清單</p>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+                            <tr>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">#</td>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">Company</td>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">Title</td>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">Source</td>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">Time</td>
+                              <td style="padding:8px 6px;border:1px solid #dbe4f0;font-size:12px;line-height:18px;font-weight:700;color:#1e3a8a;background-color:#eff6ff;">Link</td>
+                            </tr>
+                            ${news_rows}
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """
+        )
+    ).substitute(
+        subject=html.escape(subject),
+        meta_rows=meta_rows,
+        major_shift=html.escape(major_shift),
+        keyword_rows=keyword_rows,
+        summary_rows=summary_rows,
+        conclusion_rows=conclusion_rows,
+        watch_rows=watch_rows,
+        news_rows=news_rows,
+        image_section=image_section,
+    )
+
+
 def build_metadata_payload(
     settings: ReportSettings,
     generated_at: datetime,
@@ -1341,10 +1599,15 @@ def generate_report(settings: ReportSettings, output_path: Path, metadata_output
     )
     report_html = render_report(settings.template_path, template_context)
     write_report(output_path, report_html)
+    edm_output_path = build_edm_output_path(output_path)
+    edm_html = convert_report_html_to_edm(report_html, settings.report_title)
+    write_report(edm_output_path, edm_html)
     if metadata_output_path is not None:
         metadata_payload = build_metadata_payload(settings, generated_at, entries, analysis, output_path)
+        metadata_payload["edm_report_path"] = edm_output_path.name
         write_metadata(metadata_output_path, metadata_payload)
     print_console_summary(settings, generated_at, entries, analysis, output_path)
+    print(f"📧 EDM HTML 報告已寫入: {edm_output_path}")
     return output_path
 
 
